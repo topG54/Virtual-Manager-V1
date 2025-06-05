@@ -215,7 +215,7 @@ def show_tree(root_id):
     print_tree_helper(root_id, 1)
 
 
-def get_attribute(attr_name, optional = False, valid_attrs = [], multiple = False):
+def get_attribute(attr_name, optional=False, valid_attrs=[], multiple=False):
     print('\tenter to end. type reset to reset entry.')
     if optional:
         prompt = f'{attr_name}(optional): '
