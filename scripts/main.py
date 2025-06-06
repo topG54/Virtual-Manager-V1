@@ -45,17 +45,17 @@ class Virtual_Manager(cmd.Cmd):
     prompt = '[vm]> '
 
     def default(self, line):
-        print(f'\'{line}\' is not a recognised command. Type help to list commands.')
+        print(f'\'{line}\' is not a recognised command. type help to list commands.')
 
     def do_exit(self, arg):
         '''exits the shell'''
-        print('Goodbye')
+        print('goodbye')
         return True
     
     def do_init_db(self, arg):
         '''initialises the empty database if it doesnt exist'''
         if os.path.exists(DB_PATH):
-            print('database already exists. delete database before init')
+            print('database already exists')
             return
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -125,9 +125,9 @@ class Virtual_Manager(cmd.Cmd):
                 print("invalid category. categories: project, recurring, guide, todo, task, note, checklist, repository.")
 
     def do_show_all(self, arg):
-        '''Shows all nodes in the database'''
+        '''shows all nodes in the database'''
         if not os.path.exists(DB_PATH):
-            print("Database not found.")
+            print("database not found.")
             return
 
         conn = sqlite3.connect(DB_PATH)
@@ -137,7 +137,7 @@ class Virtual_Manager(cmd.Cmd):
         conn.close()
 
         if not rows:
-            print("No nodes found.")
+            print("no nodes found.")
             return
 
         for row in rows:
@@ -149,14 +149,19 @@ class Virtual_Manager(cmd.Cmd):
             print(f"status: {row[4]}")
             tags = json.loads(row[5]) if row[5] else []
             print(f"tags: {tags}")
-            print(f"priority Group: {row[6]}")
+            print(f"priority group: {row[6]}")
             print(f"content: {row[7]}")
-            print(f"created At: {row[8]}")
-            print(f"last Updated: {row[9]}")
+            print(f"created at: {row[8]}")
+            print(f"last updated: {row[9]}")
 
     def do_tree(self, arg):
         '''gives a tree view of all nodes starting from root node with id specified
         if no argument id given, entire tree is shown'''
+        
+        if not os.path.exists(DB_PATH):
+            print("database not found.")
+            return
+        
         if arg:
             if not arg.isnumeric():
                 print('invalid id')
@@ -166,6 +171,11 @@ class Virtual_Manager(cmd.Cmd):
 
     def do_inspect(self, arg):
         '''show details of a node by id'''
+
+        if not os.path.exists(DB_PATH):
+            print("database not found.")
+            return
+
         if not arg.isdigit():
             print('invalid id')
             return
@@ -194,10 +204,10 @@ class Virtual_Manager(cmd.Cmd):
         '''format: priority <id> <change by>
         changes the priority group of node by specified amount (can be negative)'''
 
-        #need to normalise the priority groups first. tehre sould be no gaps.
-        # grab the priorities and put them in an array
-        # we sort priorities ascending
-        # then change the priority grp of the nodes to be the same as array index
+        if not os.path.exists(DB_PATH):
+            print("database not found.")
+            return
+
         try:
             id, change_by = shlex.split(arg)
             change_by = int(change_by)
@@ -233,13 +243,156 @@ class Virtual_Manager(cmd.Cmd):
         conn.close()
         print('success')
 
+    def do_search(self, arg):
+        """format: search [[key, value], [key, value], ...]
+        options: id, title, category, status
+        example: search tag research category task"""
+        if not os.path.exists(DB_PATH):
+            print("database not found.")
+            return
 
+        args = shlex.split(arg)
+        if len(args) % 2 != 0:
+            print("invalid format. format: search [[key, value], [key, value], ...]" \
+            "example: search tag research category task")
+            return
 
+        filters = {}
+        for i in range(0, len(args), 2):
+            key = args[i].lower()
+            value = args[i+1]
+            filters[key] = value
+
+        query = "SELECT * FROM nodes WHERE 1=1"
+        params = []
+
+        if "id" in filters:
+            query += " AND id = ?"
+            params.append(filters["id"])
+
+        if "title" in filters:
+            query += " AND title LIKE ?"
+            params.append(f"%{filters['title']}%")
+
+        if "tags" in filters:
+            query += " AND json_extract(tags, '$') LIKE ?"
+            params.append(f"%{filters['tags']}%")
+
+        if "category" in filters:
+            query += " AND category = ?"
+            params.append(filters["category"])
+
+        if "status" in filters:
+            query += " AND status = ?"
+            params.append(filters["status"])
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute(query, params)
+        results = c.fetchall()
+        conn.close()
+
+        if not results:
+            print("no nodes found.")
+            return
+
+        for row in results:
+            output = ''
+            output += f"{row[0]}-{row[2]}: {row[1]}  "
+            if "status" in filters:
+                output +=  f"status: {row[4]}, "
+            if "tags" in filters:
+                tags = json.loads(row[5]) if row[5] else []
+                output += f"tags: {tags}, "
+            print(output)
+
+    def do_delete(self, arg):
+        '''deletes a node by id.
+        format: delete <id>'''
         
+        if not os.path.exists(DB_PATH):
+            print("database not found.")
+            return
         
+        try:
+            id = int(shlex.split(arg)[0])
+        except:
+            print('invalid format, format: delete <id>') 
+            return
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        print('deleting node:')
+        self.do_inspect(self, str(id))
+        node = c.execute('''SELECT id FROM nodes WHERE id = ?''', (id,)).fetchone()
+        if not node:
+            print('node does not exist')
+            return
+        c.execute('''DELETE FROM nodes WHERE id = ?''', (id,))
+        conn.commit()
+        conn.close()
+        print('success')
+
+    def do_edit(self, arg):
+        """format: edit <id> [[key, new value], [key, new value], ...]
+        options: title, parent, status, content
+        example: edit 3902 status deprecated title \"new title\"
+        please use quotes for new values with spaces"""
+        if not os.path.exists(DB_PATH):
+            print("database not found.")
+            return
+
+        args = shlex.split(arg)
+        try:
+            id = int(args[0])
+            args = args[1:]
+            if len(args) % 2 != 0:
+                raise Exception
+        except:
+            print("invalid format. format: edit <id> [[key, new value], [key, new value], ...]" \
+            "example: edit 3902 status deprecated title Y")
+            return
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        node = c.execute('''SELECT id FROM nodes WHERE id = ?''', (id,)).fetchone()
+        if not node:
+            print('node does not exist')
+            return
+
+        filters = {}
+        for i in range(0, len(args), 2):
+            key = args[i].lower()
+            value = args[i+1]
+            filters[key] = value
+
+        params = []
+        updates = ''
+        if "title" in filters:
+            updates += "title = ?, "
+            params.append(filters["title"])
+
+        if "parent" in filters:
+            updates += "parent_id = ?, "
+            params.append(filters["parent"])
+
+        if "status" in filters:
+            updates += "status = ?, "
+            params.append(filters["status"])
+
+        if "content" in filters:
+            updates += "content = ?, "
+            params.append(filters["content"])
         
-
-
+        params.append(id)
+        query = f"UPDATE nodes SET {updates[:-2]} WHERE id = ?"
+        
+        try:
+            c.execute(query, params)
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print('error: ', e)
+        print('sucsess')
 
 
 
@@ -423,13 +576,3 @@ if __name__ == '__main__':
 
 
 
-
-
-
-'''
-plan for next hour:
-
-make terminal edit functions for every attribute, or all
-make (de)prioritise function
-
-'''
