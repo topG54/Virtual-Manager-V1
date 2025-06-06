@@ -28,7 +28,9 @@ YELLOW  = "\033[0;33m"
 BLUE    = "\033[0;34m"
 MAGENTA = "\033[0;35m"
 CYAN    = "\033[0;36m"
+WHITE   = "\033[0;37m"
 RESET   = "\033[0m"
+RESET_TEXT_COLOUR = "\033[39m"
 
 
 CATEGORIES = ['project', 'recurring', 'guide', 'todo', 'repository', 'task', 'note', 'checklist']
@@ -348,10 +350,10 @@ class Virtual_Manager(cmd.Cmd):
             if len(args) % 2 != 0:
                 raise Exception
         except:
-            print("invalid format. format: edit <id> [[key, new value], [key, new value], ...]" \
+            print("invalid format. format: edit <id> [[key, new value], [key, new value], ...]\n" \
             "example: edit 3902 status deprecated title Y")
             return
-
+        
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         node = c.execute('''SELECT id FROM nodes WHERE id = ?''', (id,)).fetchone()
@@ -394,14 +396,17 @@ class Virtual_Manager(cmd.Cmd):
             print('error: ', e)
         print('sucsess')
 
-
+    def do_complete(self, arg):
+        '''sets node status to closed'''
+        new = arg + ' status closed'
+        self.do_edit(new)
 
 
 
 def show_tree(root_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT id, title, category, parent_id, priority_group FROM nodes ')
+    c.execute('SELECT id, title, category, parent_id, priority_group, status FROM nodes ')
     nodes = c.fetchall()
     conn.close()
 
@@ -441,18 +446,20 @@ def show_tree(root_id):
                         colour = MAGENTA
                     case _:
                         colour = BLUE
-                print(preceeding_string + connector + f'{priority_group[child][0]}-{colour}{priority_group[child][2]}{RESET}: {priority_group[child][1]}')
+                
+                closed_effect = ''
+                if priority_group[child][5] in ['closed', 'deprecated']:
+                    closed_effect = "\033[90m"
+                colour += closed_effect
+                print(preceeding_string + connector + f'{closed_effect}{priority_group[child][0]}-{colour}{priority_group[child][2]}{WHITE}{closed_effect}: {priority_group[child][1]}{RESET}')
 
+                if closed_effect: #dont print children of closed
+                    return
                 if child == len(priority_group) - 1: # secondary nodes after last element have no added '│'
                     print_tree_helper(priority_group[child][0], preceeding_string + '    ')
                 else:
                     print_tree_helper(priority_group[child][0], preceeding_string + '    │')
-                
-
-                
-
-                
-
+        
     
     print_tree_helper(root_id)
 
