@@ -3,6 +3,7 @@ import os
 import sqlite3
 import shlex
 import json
+import itertools
 
 '''
             case 'routine':
@@ -20,6 +21,15 @@ import json
             case 'checklist':
                 add_checklist(title)
 '''
+
+RED     = "\033[0;31m"
+GREEN   = "\033[0;32m"
+YELLOW  = "\033[0;33m"
+BLUE    = "\033[0;34m"
+MAGENTA = "\033[0;35m"
+CYAN    = "\033[0;36m"
+RESET   = "\033[0m"
+
 
 CATEGORIES = ['project', 'recurring', 'guide', 'todo', 'repository', 'task', 'note', 'checklist']
 STATUS_OPTIONS = ['open', 'closed', 'deprecated']
@@ -180,10 +190,54 @@ class Virtual_Manager(cmd.Cmd):
             "last_updated": row[9],
         }, indent=2))
 
+    def do_priority(self,arg):
+        '''format: priority <id> <change by>
+        changes the priority group of node by specified amount (can be negative)'''
+
+        #need to normalise the priority groups first. tehre sould be no gaps.
+        # grab the priorities and put them in an array
+        # we sort priorities ascending
+        # then change the priority grp of the nodes to be the same as array index
+        try:
+            id, change_by = shlex.split(arg)
+            change_by = int(change_by)
+        except Exception as e:
+            print('invalid format. format: priority <id> <change by>', e)
+            return
+
+        priorities = []
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        parent = c.execute('''SELECT parent_id FROM nodes WHERE id = ?''', (id,)).fetchone()
+        parent = parent[0] if parent else None
+        nodes = c.execute('''SELECT id, priority_group FROM nodes WHERE parent_id = ?''', (parent,)).fetchall()
+
+        priorities = [i[1] for i in nodes]
+        children = [i[0] for i in nodes]
+        priorities = sorted(set(priorities)) # removes duplicates
+
+        priority_lookup = dict(nodes) # to find original priority from id
+
+        new_priorities = {}
+        for i in range(len(priorities)):
+            new_priorities[priorities[i]] = i
+        #now we have all priorities one away from each other
+
+        for child in children:
+            original = priority_lookup[child]
+            new = int(new_priorities[original])
+            if child == int(id.strip()):
+                new += change_by
+            c.execute('''UPDATE nodes SET priority_group = ? WHERE id = ?''', (int(new), int(child)))
+            conn.commit()
+        conn.close()
+        print('success')
 
 
 
-
+        
+        
+        
 
 
 
@@ -203,16 +257,51 @@ def show_tree(root_id):
         parent = node[3]
         parent_to_child.setdefault(parent, []).append(node)
     
-    def print_tree_helper(cur_id, indent):
+    def print_tree_helper(cur_id, preceeding_string=''):
         children = parent_to_child.get(cur_id, [])
         if not children:
             return
-        children.sort(key=lambda x: x[4])
-        for child in children:
-            print('  ' * indent + f'{child[0]}_{child[2]}_{child[1]}')
-            print_tree_helper(child[0], indent+1)
+        children.sort(key=lambda x: x[4], reverse=True)
+        children = [list(group) for key, group in itertools.groupby(children, key=lambda x: x[4])] # groups into priority groups 2d list
+        for priority_group in children:
+            for child in range(len(priority_group)):
+                if len(priority_group) == 1: #single element
+                    connector = '    ' + '['
+                elif child == 0 and len(priority_group) > 1: # first element
+                    connector = '    ' + '┌' 
+                elif child == len(priority_group)-1 and len(priority_group) > 1: # last element
+                    connector = '    ' + '└'
+                else: #middle element
+                    connector = '    ' + '├'
+
+                category = priority_group[child][2]
+                match category:
+                    case 'project':
+                        colour = GREEN
+                    case 'task':
+                        colour = RED
+                    case 'recurring':
+                        colour = YELLOW
+                    case 'todo':
+                        colour = CYAN
+                    case 'note':
+                        colour = MAGENTA
+                    case _:
+                        colour = BLUE
+                print(preceeding_string + connector + f'{priority_group[child][0]}-{colour}{priority_group[child][2]}{RESET}: {priority_group[child][1]}')
+
+                if child == len(priority_group) - 1: # secondary nodes after last element have no added '│'
+                    print_tree_helper(priority_group[child][0], preceeding_string + '    ')
+                else:
+                    print_tree_helper(priority_group[child][0], preceeding_string + '    │')
+                
+
+                
+
+                
+
     
-    print_tree_helper(root_id, 1)
+    print_tree_helper(root_id)
 
 
 def get_attribute(attr_name, optional=False, valid_attrs=[], multiple=False):
@@ -331,3 +420,16 @@ def add_note(title):
 if __name__ == '__main__':
     vm = Virtual_Manager()
     vm.cmdloop()
+
+
+
+
+
+
+'''
+plan for next hour:
+
+make terminal edit functions for every attribute, or all
+make (de)prioritise function
+
+'''
