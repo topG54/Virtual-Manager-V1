@@ -5,22 +5,8 @@ import shlex
 import json
 import itertools
 
-'''
-            case 'routine':
-                add_routine(title)
-            case 'guide':
-                add_guide(title)
-            case 'todo':
-                add_todo(title)
-            case 'repository':
-                add_repository(title)
-            case 'task':
-                add_task(title)
-            case 'note':
-                add_note(title)
-            case 'checklist':
-                add_checklist(title)
-'''
+
+
 
 RED     = "\033[0;31m"
 GREEN   = "\033[0;32m"
@@ -28,12 +14,14 @@ YELLOW  = "\033[0;33m"
 BLUE    = "\033[0;34m"
 MAGENTA = "\033[0;35m"
 CYAN    = "\033[0;36m"
+PINK    = "\033[0;201m"
 WHITE   = "\033[0;37m"
 RESET   = "\033[0m"
+
 RESET_TEXT_COLOUR = "\033[39m"
 
 
-CATEGORIES = ['project', 'recurring', 'guide', 'todo', 'repository', 'task', 'note', 'checklist']
+CATEGORIES = ['project', 'recurring', 'manual', 'todo', 'task', 'note', 'folder']
 STATUS_OPTIONS = ['open', 'closed', 'deprecated']
 DEFAULT_TAGS = []
 
@@ -41,6 +29,10 @@ DEFAULT_TAGS = []
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(SCRIPTS_DIR, "..", "vm.db")
 DB_PATH = os.path.abspath(DB_PATH)
+ROOT_DIR = os.path.join(SCRIPTS_DIR, "..")
+ROOT_DIR = os.path.abspath(ROOT_DIR)
+MIRROR = os.path.join(ROOT_DIR, 'fs_mirror')
+
 
 class Virtual_Manager(cmd.Cmd):
     intro = 'Virtual Manager v1. Type help to list commands.'
@@ -48,6 +40,9 @@ class Virtual_Manager(cmd.Cmd):
 
     def default(self, line):
         print(f'\'{line}\' is not a recognised command. type help to list commands.')
+
+    def emptyline(self):
+        pass  # Prevent repeat of last command
 
     def do_exit(self, arg):
         '''exits the shell'''
@@ -66,9 +61,9 @@ class Virtual_Manager(cmd.Cmd):
             CREATE TABLE nodes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
-                category TEXT NOT NULL CHECK(category IN ('project', 'recurring', 'guide', 'todo', 'task', 'note')),
+                category TEXT NOT NULL CHECK(category IN ('project', 'recurring', 'manual', 'todo', 'task', 'note', 'folder')),
                 parent_id INTEGER,
-                status TEXT DEFAULT NULL CHECK(status IN ('open', 'closed', 'deprecated') OR status IS NULL),
+                status TEXT DEFAULT NULL,
                 tags JSON DEFAULT '[]',
                 priority_group INTEGER DEFAULT 0,
                 content TEXT,
@@ -107,6 +102,11 @@ class Virtual_Manager(cmd.Cmd):
         afterwards, you will get asked for attributes
         it will ask for another attribute repeatedly
         just press enter if you dont want to add any more of that atribute'''
+
+        if not os.path.exists(DB_PATH):
+            print("database not found.")
+            return
+
         args = shlex.split(arg)
         if len(args) < 2:
             print('invalid format. format: add <category> <title>')
@@ -123,8 +123,12 @@ class Virtual_Manager(cmd.Cmd):
                 add_task(title)
             case 'note':
                 add_note(title)
+            case 'manual':
+                add_manual(title)
+            case 'folder':
+                add_folder(title)
             case _:
-                print("invalid category. categories: project, recurring, guide, todo, task, note, checklist, repository.")
+                print("invalid category. categories: project, recurring, manual, todo, task, note, folder.")
 
     def do_show_all(self, arg):
         '''shows all nodes in the database'''
@@ -394,12 +398,70 @@ class Virtual_Manager(cmd.Cmd):
             conn.close()
         except Exception as e:
             print('error: ', e)
-        print('sucsess')
+        print('success')
 
     def do_complete(self, arg):
         '''sets node status to closed'''
         new = arg + ' status closed'
         self.do_edit(new)
+
+    def do_push(self, arg):
+        '''\'pushes\' the changes in the database to the file system mirror
+        warning: all changes in mirror will be lost if not pulled first
+        try to edit only one side at a time to avoid loss of data'''
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT * FROM nodes')
+        nodes = c.fetchall()
+        conn.close()
+
+        parent_to_child = {}
+        for node in nodes:
+            parent = node[3]
+            parent_to_child.setdefault(parent, []).append(node)
+        
+        def helper(cur_path, cur_id):
+            children = parent_to_child.get(cur_id, [])
+            if not children:
+                return
+            
+            for child in children:
+                id = child[0]
+                title = child[1]
+                category = child[2]
+
+                keys = ['id', 'title', 'category', 'parent_id', 'status', 'tags', 'priority_group', 'content', 'created_at', 'last_updated']
+                node_dict = dict(zip(keys, child))
+                content = node_dict.pop('content') or ''  # content will be separate and at the end
+                output = json.dumps(node_dict, indent=2) + '\n\n' + content
+                
+                name = f'{id}_{category}_{title}'
+                new_path = os.path.join(cur_path, name) #either folder or file
+
+                if category in ['task', 'note']: #doesnt make new folder
+                    new_path += '.md'
+                    with open(new_path, 'w') as f:
+                        f.write(output)
+                    return helper(cur_path, id)
+                
+                else:
+                    os.makedirs(new_path, exist_ok=True)
+                    desc_path = os.path.join(new_path, '_description.md')
+                    with open(desc_path, 'w') as f:
+                        f.write(output)
+                    helper(new_path, id)
+
+        os.makedirs(MIRROR, exist_ok=True)
+        helper(MIRROR, None)
+
+
+
+
+
+        
+
+        
+
 
 
 
@@ -444,17 +506,22 @@ def show_tree(root_id):
                         colour = CYAN
                     case 'note':
                         colour = MAGENTA
-                    case _:
+                    case 'manual':
                         colour = BLUE
+                    case 'folder':
+                        colour  = WHITE
+                    case _:
+                        colour = PINK
                 
                 closed_effect = ''
                 if priority_group[child][5] in ['closed', 'deprecated']:
-                    closed_effect = "\033[90m"
+                    closed_effect = "\033[90m" #makes it gray
                 colour += closed_effect
                 print(preceeding_string + connector + f'{closed_effect}{priority_group[child][0]}-{colour}{priority_group[child][2]}{WHITE}{closed_effect}: {priority_group[child][1]}{RESET}')
 
                 if closed_effect: #dont print children of closed
                     return
+                
                 if child == len(priority_group) - 1: # secondary nodes after last element have no added '│'
                     print_tree_helper(priority_group[child][0], preceeding_string + '    ')
                 else:
@@ -570,6 +637,38 @@ def add_note(title):
     print(f"creating note...\ntitle: {title}\nparent: {parent_id}\ncontent: {content}")
 
     insert_node(title, 'note', parent_id=parent_id, content=content)
+
+
+def add_manual(title):
+    parent_id = get_attribute('parent', optional=True)
+    tags = get_attribute('tags', optional=True, multiple=True)
+    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
+    if not status:
+        status = 'open'
+    print(f"creating manual...\ntitle: {title}\nparent: {parent_id}\ntags: {tags}\nstatus: {status}")
+
+    insert_node(title, 'manual', parent_id=parent_id, status=status, tags=tags)
+
+
+def add_folder(title):
+    parent_id = get_attribute('parent', optional=True)
+    tags = get_attribute('tags', optional=True, multiple=True)
+    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
+    if not status:
+        status = 'open'
+    print(f"creating folder...\ntitle: {title}\nparent: {parent_id}\ntags: {tags}\nstatus: {status}")
+
+    insert_node(title, 'folder', parent_id=parent_id, status=status, tags=tags)
+
+
+
+
+def sanitize_name(title, id, status):
+    title = title.lower().replace(" ", "_")
+    name = f"{title}_{id}"
+    if status.lower() != "open":
+        name = f"CLOSED_{name}"
+    return name
 
 
 
