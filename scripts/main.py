@@ -162,7 +162,8 @@ class Virtual_Manager(cmd.Cmd):
 
     def do_tree(self, arg):
         '''gives a tree view of all nodes starting from root node with id specified
-        if no argument id given, entire tree is shown'''
+        if no argument id given, entire tree is shown
+        format: tree <id(optional)>'''
         
         if not os.path.exists(DB_PATH):
             print("database not found.")
@@ -442,7 +443,7 @@ class Virtual_Manager(cmd.Cmd):
                     new_path += '.md'
                     with open(new_path, 'w') as f:
                         f.write(output)
-                    return helper(cur_path, id)
+                    helper(cur_path, id)
                 
                 else:
                     os.makedirs(new_path, exist_ok=True)
@@ -453,6 +454,55 @@ class Virtual_Manager(cmd.Cmd):
 
         os.makedirs(MIRROR, exist_ok=True)
         helper(MIRROR, None)
+
+    def do_pull(self, arg):
+        '''if there are md files in mirror, they will be used to edit existing nodes based on id.
+        new nodes will not be created, and nodes will not be deleted with this method
+        format: pull <id(optional)>'''
+
+        keys = ['title', 'category', 'parent_id', 'status', 'tags', 'priority_group', 'content', 'created_at', 'last_updated', 'id']
+
+        id = None
+        if arg:
+            try:
+                id = int(arg)
+            except Exception as e:
+                print('invalid format. agument must be a number', e)
+        
+        def extract_md(path):
+            with open(path, 'r') as f:
+                metadata, content = f.read().split('\n\n', 1)
+            node_dict = json.loads(metadata)
+            node_dict['content'] = content
+            return node_dict
+
+        #getting paths to all .md files
+        md_paths = []
+        for path, dirs, files in os.walk(MIRROR):
+            for file in files:
+                if file[-3:] == '.md':
+                    md_paths.append(os.path.join(path, file))
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+
+        for path in md_paths:
+            try:
+                node_dict = extract_md(path)
+                node_list = [node_dict[i] for i in keys]
+                
+                c.execute('''UPDATE nodes
+                    SET title=?, category=?, parent_id=?, status=?, tags=?, priority_group=?, content=?, created_at=?, last_updated=?
+                    WHERE id=?''', node_list)
+                
+            except Exception as e:
+                print(f'file at {path} could not be used to update database', e)
+                print('please check if the JSON formatting is correct and that there are two newline characters after the JSON')
+        conn.commit()
+        conn.close()
+        print('success')
+
+            
 
 
 
@@ -661,17 +711,12 @@ def add_folder(title):
     insert_node(title, 'folder', parent_id=parent_id, status=status, tags=tags)
 
 
-
-
 def sanitize_name(title, id, status):
     title = title.lower().replace(" ", "_")
     name = f"{title}_{id}"
     if status.lower() != "open":
         name = f"CLOSED_{name}"
     return name
-
-
-
 
 
 

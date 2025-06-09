@@ -1,0 +1,13 @@
+{
+  "id": 20,
+  "title": "monthly checklist",
+  "category": "note",
+  "parent_id": 17,
+  "status": null,
+  "tags": "[]",
+  "priority_group": 0,
+  "created_at": "2025-06-09 11:51:16",
+  "last_updated": "2025-06-09 11:51:16"
+}
+
+pc, mousepad
