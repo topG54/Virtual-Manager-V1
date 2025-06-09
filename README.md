@@ -27,12 +27,13 @@ Each node type represents a distinct unit of work or structure. Nodes do not ove
 |--------------|---------------------------------------------|
 | `project`    | A container for broader goals               |
 | `recurring`  | A repeating routine or workflow             |
-| `guide`      | A reference document or SOP                 |
+| `manual`     | A reference document or SOP                 |
 | `todo`       | A simple checklist item                     |
 | `repository` | A code or asset repository                  |
 | `task`       | A structured unit of work with content      |
 | `note`       | A standalone or attached content block      |
-| `checklist`  | A list of verifiable steps or items         |
+
+every node except task and note can be thought of more as a folder
 
 ---
 
