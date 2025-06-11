@@ -1,3 +1,4 @@
+--vmgr
 {
   "id": 12,
   "title": "shop Z groceries",

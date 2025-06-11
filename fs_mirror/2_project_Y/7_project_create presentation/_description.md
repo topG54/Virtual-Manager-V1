@@ -1,3 +1,4 @@
+--vmgr
 {
   "id": 7,
   "title": "create presentation",

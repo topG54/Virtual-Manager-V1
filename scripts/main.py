@@ -434,7 +434,7 @@ class Virtual_Manager(cmd.Cmd):
                 keys = ['id', 'title', 'category', 'parent_id', 'status', 'tags', 'priority_group', 'content', 'created_at', 'last_updated']
                 node_dict = dict(zip(keys, child))
                 content = node_dict.pop('content') or ''  # content will be separate and at the end
-                output = json.dumps(node_dict, indent=2) + '\n\n' + content
+                output = '--vmgr\n' + json.dumps(node_dict, indent=2) + '\n\n' + content
                 
                 name = f'{id}_{category}_{title}'
                 new_path = os.path.join(cur_path, name) #either folder or file
@@ -454,6 +454,7 @@ class Virtual_Manager(cmd.Cmd):
 
         os.makedirs(MIRROR, exist_ok=True)
         helper(MIRROR, None)
+        print('success')
 
     def do_pull(self, arg):
         '''if there are md files in mirror, they will be used to edit existing nodes based on id.
@@ -471,7 +472,10 @@ class Virtual_Manager(cmd.Cmd):
         
         def extract_md(path):
             with open(path, 'r') as f:
-                metadata, content = f.read().split('\n\n', 1)
+                text = f.read()
+                if text[:7] == '--vmgr\n':
+                    return None
+                metadata, content = text[7:].split('\n\n', 1)
             node_dict = json.loads(metadata)
             node_dict['content'] = content
             return node_dict
@@ -489,8 +493,11 @@ class Virtual_Manager(cmd.Cmd):
         for path in md_paths:
             try:
                 node_dict = extract_md(path)
+                if not node_dict:
+                    continue
+
                 node_list = [node_dict[i] for i in keys]
-                
+
                 c.execute('''UPDATE nodes
                     SET title=?, category=?, parent_id=?, status=?, tags=?, priority_group=?, content=?, created_at=?, last_updated=?
                     WHERE id=?''', node_list)
@@ -508,9 +515,7 @@ class Virtual_Manager(cmd.Cmd):
 
 
 
-        
 
-        
 
 
 
