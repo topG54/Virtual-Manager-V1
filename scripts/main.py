@@ -61,7 +61,7 @@ class Virtual_Manager(cmd.Cmd):
             CREATE TABLE nodes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
-                category TEXT NOT NULL CHECK(category IN ('project', 'recurring', 'manual', 'todo', 'task', 'note', 'folder')),
+                category TEXT NOT NULL,
                 parent_id INTEGER,
                 status TEXT DEFAULT NULL,
                 tags JSON DEFAULT '[]',
