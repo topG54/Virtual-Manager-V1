@@ -6,7 +6,7 @@ import json
 import itertools
 from peewee import *
 import datetime
-
+from playhouse.shortcuts import model_to_dict
 
 RED     = "\033[0;31m"
 GREEN   = "\033[0;32m"
@@ -45,11 +45,12 @@ class Nodes(BaseModel):
     title = TextField()
     category = TextField()
     parent = ForeignKeyField('self', backref='children', null=True, on_delete='SET NULL')
-    status = TextField(null=True)
+    status = TextField(null=True, default='open')
     priority_group = IntegerField(default=0)
     created_at = DateTimeField(default = datetime.datetime.now)
     last_updated = DateTimeField(default = datetime.datetime.now)
     content = TextField(null=True)
+
 
 class NodeTags(BaseModel):
     node = ForeignKeyField(Nodes, backref='tags', on_delete='CASCADE')
@@ -100,8 +101,7 @@ class Virtual_Manager(cmd.Cmd):
         it will ask for another attribute repeatedly
         just press enter if you dont want to add any more of that atribute'''
 
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        if not db_existence():
             return
 
         args = shlex.split(arg)
@@ -111,21 +111,48 @@ class Virtual_Manager(cmd.Cmd):
         title = ' '.join(args[1:])
         match args[0]:
             case 'project':
-                add_project(title)
-            case 'recurring':
-                add_recurring(title)
-            case 'todo':
-                add_todo(title)
+                n = Nodes.create(
+                    title = title,
+                    category = args[0],
+                    parent = get_attribute('parent', optional=True),
+                    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS))
+
+                for tag in get_attribute('tags', optional=True, multiple=True):
+                    NodeTags.create(node=n, tag=tag)
+                    print(tag)
+
+            case 'recurring' | 'todo' | 'folder' | 'manual':
+                n = Nodes.create(
+                    title = title,
+                    category = args[0],
+                    parent = get_attribute('parent', optional=True),
+                    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS))
+                
             case 'task':
-                add_task(title)
+                n = Nodes.create(
+                    title = title,
+                    category = args[0],
+                    parent = get_attribute('parent', optional=False),
+                    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS),
+                    content = get_attribute('content', optional=True))
+
+                for tag in get_attribute('tags', optional=True, multiple=True):
+                    NodeTags.create(node=n, tag=tag)
+                    print(tag)
+                
             case 'note':
-                add_note(title)
-            case 'manual':
-                add_manual(title)
-            case 'folder':
-                add_folder(title)
+                n = Nodes.create(
+                    title = title,
+                    category = args[0],
+                    parent = get_attribute('parent', optional=False),
+                    content = get_attribute('content', optional=True))
+
             case _:
                 print("invalid category. categories: project, recurring, manual, todo, task, note, folder.")
+                return
+
+        for k, v in model_to_dict(n).items():
+            print(f'{k}: {v}')
 
     def do_show_all(self, arg):
         '''shows all nodes in the database'''
@@ -517,6 +544,11 @@ class Virtual_Manager(cmd.Cmd):
 
 
 
+def db_existence():
+    if 'nodes' in db.get_tables() and 'nodetags' in db.get_tables():
+        return True
+    print("database not found.")
+    return False
 
 
 def show_tree(root_id):
@@ -646,11 +678,18 @@ def add_project(title):
     parent_id = get_attribute('parent', optional=True)
     tags = get_attribute('tags', optional=True, multiple=True)
     status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
-    if not status:
-        status = 'open'
     print(f"creating project...\ntitle: {title}\nparent: {parent_id}\ntags: {tags}\nstatus: {status}")
 
     insert_node(title, 'project', parent_id=parent_id, status=status, tags=tags)
+    n = Nodes.create(
+        title = title, 
+        parent = get_attribute('parent', optional=True), 
+        status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS))
+    
+    for tag in get_attribute('tags', optional=True, multiple=True):
+        NodeTags.create(node=n, tag=tag)
+    
+    print(f'tags: {tags}\nnode info:\n' + json.dumps(model_to_dict(n)))
 
 
 def add_recurring(title):
