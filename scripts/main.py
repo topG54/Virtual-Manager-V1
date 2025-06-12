@@ -4,8 +4,8 @@ import sqlite3
 import shlex
 import json
 import itertools
-
-
+from peewee import *
+import datetime
 
 
 RED     = "\033[0;31m"
@@ -33,6 +33,31 @@ ROOT_DIR = os.path.join(SCRIPTS_DIR, "..")
 ROOT_DIR = os.path.abspath(ROOT_DIR)
 MIRROR = os.path.join(ROOT_DIR, 'fs_mirror')
 
+db = SqliteDatabase(DB_PATH)
+
+class BaseModel(Model):
+    class Meta:
+        database = db
+
+
+class Nodes(BaseModel):
+    id = AutoField()
+    title = TextField()
+    category = TextField()
+    parent = ForeignKeyField('self', backref='children', null=True, on_delete='SET NULL')
+    status = TextField(null=True)
+    priority_group = IntegerField(default=0)
+    created_at = DateTimeField(default = datetime.datetime.now)
+    last_updated = DateTimeField(default = datetime.datetime.now)
+    content = TextField(null=True)
+
+class NodeTags(BaseModel):
+    node = ForeignKeyField(Nodes, backref='tags', on_delete='CASCADE')
+    tag = TextField()
+
+
+db.connect()
+
 
 class Virtual_Manager(cmd.Cmd):
     intro = 'Virtual Manager v1. Type help to list commands.'
@@ -51,46 +76,18 @@ class Virtual_Manager(cmd.Cmd):
     
     def do_init_db(self, arg):
         '''initialises the empty database if it doesnt exist'''
-        if os.path.exists(DB_PATH):
-            print('database already exists')
-            return
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        #nodes table
-        c.execute('''
-            CREATE TABLE nodes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                category TEXT NOT NULL,
-                parent_id INTEGER,
-                status TEXT DEFAULT NULL,
-                tags JSON DEFAULT '[]',
-                priority_group INTEGER DEFAULT 0,
-                content TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(parent_id) REFERENCES nodes(id)
-                )
-        ''')
         
-        #dependencies table
-        c.execute('''
-            CREATE TABLE dependencies (
-                dependent INTEGER NOT NULL,
-                dependency INTEGER NOT NULL,
-                FOREIGN KEY(dependent) REFERENCES nodes(id), 
-                FOREIGN KEY(dependency) REFERENCES nodes(id),
-                PRIMARY KEY(dependent, dependency)
-                )
-        ''')
-        conn.commit()
-        conn.close()
-        print('db init success')
-
+        try:
+            db.create_tables([Nodes, NodeTags])
+            print('db init success')
+        except Exception as e:
+            print('failed: ', e)
+        
     def do_delete_db(self, arg):
         '''deletes the database if it exists'''
         if os.path.exists(DB_PATH):
             if input('DELETE THE DATABASE? (y/n): ').lower() == 'y':
+                db.close()
                 os.remove(DB_PATH)
                 print('success')
         else:
@@ -140,7 +137,7 @@ class Virtual_Manager(cmd.Cmd):
         c = conn.cursor()
         c.execute("SELECT * FROM nodes")
         rows = c.fetchall()
-        conn.close()
+        
 
         if not rows:
             print("no nodes found.")
@@ -159,6 +156,8 @@ class Virtual_Manager(cmd.Cmd):
             print(f"content: {row[7]}")
             print(f"created at: {row[8]}")
             print(f"last updated: {row[9]}")
+        
+        conn.close()
 
     def do_tree(self, arg):
         '''gives a tree view of all nodes starting from root node with id specified
