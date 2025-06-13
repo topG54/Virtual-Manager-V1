@@ -156,43 +156,25 @@ class Virtual_Manager(cmd.Cmd):
 
     def do_show_all(self, arg):
         '''shows all nodes in the database'''
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        
+        if not db_existence():
             return
 
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT * FROM nodes")
-        rows = c.fetchall()
-        
+        query = prefetch(Nodes.select(), NodeTags.select())
 
-        if not rows:
-            print("no nodes found.")
-            return
+        for node in query:
+            output = []
+            output.append(list(node))
+            output.append(list(node.tags))
 
-        for row in rows:
-            print("=" * 40)
-            print(f"id: {row[0]}")
-            print(f"title: {row[1]}")
-            print(f"category: {row[2]}")
-            print(f"parent id: {row[3]}")
-            print(f"status: {row[4]}")
-            tags = json.loads(row[5]) if row[5] else []
-            print(f"tags: {tags}")
-            print(f"priority group: {row[6]}")
-            print(f"content: {row[7]}")
-            print(f"created at: {row[8]}")
-            print(f"last updated: {row[9]}")
-        
-        conn.close()
+        print(output)
 
     def do_tree(self, arg):
         '''gives a tree view of all nodes starting from root node with id specified
         if no argument id given, entire tree is shown
         format: tree <id(optional)>'''
         
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        if not db_existence():
             return
         
         if arg:
@@ -205,8 +187,7 @@ class Virtual_Manager(cmd.Cmd):
     def do_inspect(self, arg):
         '''show details of a node by id'''
 
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        if not db_existence():
             return
 
         if not arg.isdigit():
@@ -237,8 +218,7 @@ class Virtual_Manager(cmd.Cmd):
         '''format: priority <id> <change by>
         changes the priority group of node by specified amount (can be negative)'''
 
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        if not db_existence():
             return
 
         try:
@@ -280,8 +260,8 @@ class Virtual_Manager(cmd.Cmd):
         """format: search [[key, value], [key, value], ...]
         options: id, title, category, status
         example: search tag research category task"""
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        
+        if not db_existence():
             return
 
         args = shlex.split(arg)
@@ -343,8 +323,7 @@ class Virtual_Manager(cmd.Cmd):
         '''deletes a node by id.
         format: delete <id>'''
         
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        if not db_existence():
             return
         
         try:
@@ -370,8 +349,8 @@ class Virtual_Manager(cmd.Cmd):
         options: title, parent, status, content
         example: edit 3902 status deprecated title \"new title\"
         please use quotes for new values with spaces"""
-        if not os.path.exists(DB_PATH):
-            print("database not found.")
+        
+        if not db_existence():
             return
 
         args = shlex.split(arg)
@@ -429,6 +408,10 @@ class Virtual_Manager(cmd.Cmd):
 
     def do_complete(self, arg):
         '''sets node status to closed'''
+
+        if not db_existence():
+            return
+
         new = arg + ' status closed'
         self.do_edit(new)
 
@@ -436,6 +419,10 @@ class Virtual_Manager(cmd.Cmd):
         '''\'pushes\' the changes in the database to the file system mirror
         warning: all changes in mirror will be lost if not pulled first
         try to edit only one side at a time to avoid loss of data'''
+
+        if not db_existence():
+            return
+
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('SELECT * FROM nodes')
@@ -487,6 +474,9 @@ class Virtual_Manager(cmd.Cmd):
         new nodes will not be created, and nodes will not be deleted with this method
         format: pull <id(optional)>'''
 
+        if not db_existence():
+            return
+
         keys = ['title', 'category', 'parent_id', 'status', 'tags', 'priority_group', 'content', 'created_at', 'last_updated', 'id']
 
         id = None
@@ -536,10 +526,6 @@ class Virtual_Manager(cmd.Cmd):
         print('success')
 
             
-
-
-
-
 
 
 
@@ -650,108 +636,6 @@ def get_attribute(attr_name, optional=False, valid_attrs=[], multiple=False):
                 attr_list.append(attr)
 
         print('\tentered: ' + ', '.join(attr_list))
-
-
-def insert_node(title, category, parent_id=None, status=None, tags=None, content=None):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO nodes (title, category, parent_id, status, tags, content)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (
-            title,
-            category,
-            parent_id,
-            status,
-            json.dumps(tags or []),
-            content
-        ))
-        conn.commit()
-        conn.close()
-        print('success')
-    except Exception as e:
-        print('database insertion failed:', e)
-
-
-def add_project(title):
-    parent_id = get_attribute('parent', optional=True)
-    tags = get_attribute('tags', optional=True, multiple=True)
-    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
-    print(f"creating project...\ntitle: {title}\nparent: {parent_id}\ntags: {tags}\nstatus: {status}")
-
-    insert_node(title, 'project', parent_id=parent_id, status=status, tags=tags)
-    n = Nodes.create(
-        title = title, 
-        parent = get_attribute('parent', optional=True), 
-        status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS))
-    
-    for tag in get_attribute('tags', optional=True, multiple=True):
-        NodeTags.create(node=n, tag=tag)
-    
-    print(f'tags: {tags}\nnode info:\n' + json.dumps(model_to_dict(n)))
-
-
-def add_recurring(title):
-    parent_id = get_attribute('parent', optional=True)
-    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
-    if not status:
-        status = 'open'
-    print(f"creating recurring...\ntitle: {title}\nparent: {parent_id}\nstatus: {status}")
-
-    insert_node(title, 'recurring', parent_id=parent_id, status=status)
-
-
-def add_todo(title):
-    parent_id = get_attribute('parent', optional=True)
-    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
-    if not status:
-        status = 'open'
-    print(f"creating todo...\ntitle: {title}\nparent: {parent_id}\nstatus: {status}")
-
-    insert_node(title, 'todo', parent_id=parent_id, status=status)
-
-
-def add_task(title):
-    parent_id = get_attribute('parent', optional=False) #shld always be under something
-    tags = get_attribute('tags', optional=True, multiple=True)
-    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
-    content = get_attribute('content', optional=True)
-    if not status:
-        status = 'open'
-    print(f"creating task...\ntitle: {title}\nparent: {parent_id}\ntags: {tags}\nstatus: {status}\ncontent: {content}")
-    
-    insert_node(title, 'task', parent_id=parent_id, status=status, tags=tags, content=content)
-
-
-def add_note(title):
-    parent_id = get_attribute('parent', optional=False) #shld always be under something
-    content = get_attribute('content', optional=True)
-    print(f"creating note...\ntitle: {title}\nparent: {parent_id}\ncontent: {content}")
-
-    insert_node(title, 'note', parent_id=parent_id, content=content)
-
-
-def add_manual(title):
-    parent_id = get_attribute('parent', optional=True)
-    tags = get_attribute('tags', optional=True, multiple=True)
-    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
-    if not status:
-        status = 'open'
-    print(f"creating manual...\ntitle: {title}\nparent: {parent_id}\ntags: {tags}\nstatus: {status}")
-
-    insert_node(title, 'manual', parent_id=parent_id, status=status, tags=tags)
-
-
-def add_folder(title):
-    parent_id = get_attribute('parent', optional=True)
-    tags = get_attribute('tags', optional=True, multiple=True)
-    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS)
-    if not status:
-        status = 'open'
-    print(f"creating folder...\ntitle: {title}\nparent: {parent_id}\ntags: {tags}\nstatus: {status}")
-
-    insert_node(title, 'folder', parent_id=parent_id, status=status, tags=tags)
 
 
 def sanitize_name(title, id, status):
