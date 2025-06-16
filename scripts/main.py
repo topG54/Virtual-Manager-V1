@@ -152,7 +152,10 @@ class Virtual_Manager(cmd.Cmd):
                 return
 
         for k, v in model_to_dict(n).items():
-            print(f'{k}: {v}')
+            if k == 'parent':
+                print(f'{k}: {v['id']}')
+            else:
+                print(f'{k}: {v}')
 
     def do_show_all(self, arg):
         '''shows all nodes in the database'''
@@ -163,11 +166,16 @@ class Virtual_Manager(cmd.Cmd):
         query = prefetch(Nodes.select(), NodeTags.select())
 
         for node in query:
-            output = []
-            output.append(list(node))
-            output.append(list(node.tags))
+            print(f"id: {node.id}")
+            print(f"title: {node.title}")
+            print(f"category: {node.category}")
+            print(f"status: {node.status}")
+            print(f"priority group: {node.priority_group}")
+            print(f"created at: {node.created_at}")
+            print(f"last Updated: {node.last_updated}")
+            print(f"content: {node.content}")
 
-        print(output)
+            print('tags: ', [tag.tag for tag in node.tags])
 
     def do_tree(self, arg):
         '''gives a tree view of all nodes starting from root node with id specified
@@ -190,29 +198,29 @@ class Virtual_Manager(cmd.Cmd):
         if not db_existence():
             return
 
-        if not arg.isdigit():
-            print('invalid id')
+        try:
+            id == int(arg)
+        except:
+            print('invalid format. argument must be an integer')
             return
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT * FROM nodes WHERE id=?", (int(arg),))
-        row = c.fetchone()
-        conn.close()
-        if not row:
-            print("Node not found")
+
+        query = prefetch(Nodes.select().where(Nodes.id == int(arg)), NodeTags.select())
+
+        if not query:
+            print('node does not exist')
             return
-        print(json.dumps({
-            "id": row[0],
-            "title": row[1],
-            "category": row[2],
-            "parent_id": row[3],
-            "status": row[4],
-            "tags": json.loads(row[5] or "[]"),
-            "priority_group": row[6],
-            "content": row[7],
-            "created_at": row[8],
-            "last_updated": row[9],
-        }, indent=2))
+
+        for node in query:
+            print(f"id: {node.id}")
+            print(f"title: {node.title}")
+            print(f"category: {node.category}")
+            print(f"status: {node.status}")
+            print(f"priority group: {node.priority_group}")
+            print(f"created at: {node.created_at}")
+            print(f"last Updated: {node.last_updated}")
+            print(f"content: {node.content}")
+
+            print('tags: ', [tag.tag for tag in node.tags])
 
     def do_priority(self,arg):
         '''format: priority <id> <change by>
@@ -224,16 +232,16 @@ class Virtual_Manager(cmd.Cmd):
         try:
             id, change_by = shlex.split(arg)
             change_by = int(change_by)
+            id = int(id)
         except Exception as e:
             print('invalid format. format: priority <id> <change by>', e)
             return
 
         priorities = []
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        parent = c.execute('''SELECT parent_id FROM nodes WHERE id = ?''', (id,)).fetchone()
-        parent = parent[0] if parent else None
-        nodes = c.execute('''SELECT id, priority_group FROM nodes WHERE parent_id = ?''', (parent,)).fetchall()
+
+        parent = Nodes.select(Nodes.parent_id).where(Nodes.id == id).first().parent_id
+
+        nodes = list(Nodes.select(Nodes.id, Nodes.priority_group).where(Nodes.parent_id == parent).tuples())
 
         priorities = [i[1] for i in nodes]
         children = [i[0] for i in nodes]
@@ -249,11 +257,9 @@ class Virtual_Manager(cmd.Cmd):
         for child in children:
             original = priority_lookup[child]
             new = int(new_priorities[original])
-            if child == int(id.strip()):
+            if child == id:
                 new += change_by
-            c.execute('''UPDATE nodes SET priority_group = ? WHERE id = ?''', (int(new), int(child)))
-            conn.commit()
-        conn.close()
+            Nodes.update(priority_group = new).where(Nodes.id == child).execute()
         print('success')
 
     def do_search(self, arg):
@@ -538,11 +544,15 @@ def db_existence():
 
 
 def show_tree(root_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT id, title, category, parent_id, priority_group, status FROM nodes ')
-    nodes = c.fetchall()
-    conn.close()
+    query = Nodes.select(
+        Nodes.id,
+        Nodes.title,
+        Nodes.category,
+        Nodes.parent_id,
+        Nodes.priority_group,
+        Nodes.status)
+    nodes = list(query.tuples())
+
 
     parent_to_child = {}
     for node in nodes:
