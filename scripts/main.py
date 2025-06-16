@@ -8,28 +8,28 @@ from peewee import *
 import datetime
 from playhouse.shortcuts import model_to_dict
 
-RED     = "\033[0;31m"
-GREEN   = "\033[0;32m"
-YELLOW  = "\033[0;33m"
-BLUE    = "\033[0;34m"
-MAGENTA = "\033[0;35m"
-CYAN    = "\033[0;36m"
-PINK    = "\033[0;201m"
-WHITE   = "\033[0;37m"
-RESET   = "\033[0m"
+RED     = '\033[0;31m'
+GREEN   = '\033[0;32m'
+YELLOW  = '\033[0;33m'
+BLUE    = '\033[0;34m'
+MAGENTA = '\033[0;35m'
+CYAN    = '\033[0;36m'
+PINK    = '\033[0;201m'
+WHITE   = '\033[0;37m'
+RESET   = '\033[0m'
 
-RESET_TEXT_COLOUR = "\033[39m"
+RESET_TEXT_COLOUR = '\033[39m'
 
 
 CATEGORIES = ['project', 'recurring', 'manual', 'todo', 'task', 'note', 'folder']
-STATUS_OPTIONS = ['open', 'closed', 'deprecated']
+STATUS_OPTIONS = ['open', 'closed', 'deprecated', 'deleted']
 DEFAULT_TAGS = []
 
 # Path to the directory containing this script
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(SCRIPTS_DIR, "..", "vm.db")
+DB_PATH = os.path.join(SCRIPTS_DIR, '..', 'vm.db')
 DB_PATH = os.path.abspath(DB_PATH)
-ROOT_DIR = os.path.join(SCRIPTS_DIR, "..")
+ROOT_DIR = os.path.join(SCRIPTS_DIR, '..')
 ROOT_DIR = os.path.abspath(ROOT_DIR)
 MIRROR = os.path.join(ROOT_DIR, 'fs_mirror')
 
@@ -70,7 +70,7 @@ class Virtual_Manager(cmd.Cmd):
     def emptyline(self):
         pass  # Prevent repeat of last command
 
-    def do_exit(self, arg):
+    def do_x(self, arg):
         '''exits the shell'''
         print('goodbye')
         return True
@@ -115,7 +115,7 @@ class Virtual_Manager(cmd.Cmd):
                     title = title,
                     category = args[0],
                     parent = get_attribute('parent', optional=True),
-                    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS))
+                    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS) and 'open')
 
                 for tag in get_attribute('tags', optional=True, multiple=True):
                     NodeTags.create(node=n, tag=tag)
@@ -133,7 +133,7 @@ class Virtual_Manager(cmd.Cmd):
                     title = title,
                     category = args[0],
                     parent = get_attribute('parent', optional=False),
-                    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS),
+                    status = get_attribute('status', optional=True, valid_attrs=STATUS_OPTIONS) and 'open',
                     content = get_attribute('content', optional=True))
 
                 for tag in get_attribute('tags', optional=True, multiple=True):
@@ -148,7 +148,7 @@ class Virtual_Manager(cmd.Cmd):
                     content = get_attribute('content', optional=True))
 
             case _:
-                print("invalid category. categories: project, recurring, manual, todo, task, note, folder.")
+                print('invalid category. categories: project, recurring, manual, todo, task, note, folder.')
                 return
 
         for k, v in model_to_dict(n).items():
@@ -166,14 +166,14 @@ class Virtual_Manager(cmd.Cmd):
         query = prefetch(Nodes.select(), NodeTags.select())
 
         for node in query:
-            print(f"id: {node.id}")
-            print(f"title: {node.title}")
-            print(f"category: {node.category}")
-            print(f"status: {node.status}")
-            print(f"priority group: {node.priority_group}")
-            print(f"created at: {node.created_at}")
-            print(f"last Updated: {node.last_updated}")
-            print(f"content: {node.content}")
+            print(f'id: {node.id}')
+            print(f'title: {node.title}')
+            print(f'category: {node.category}')
+            print(f'status: {node.status}')
+            print(f'priority group: {node.priority_group}')
+            print(f'created at: {node.created_at}')
+            print(f'last Updated: {node.last_updated}')
+            print(f'content: {node.content}')
 
             print('tags: ', [tag.tag for tag in node.tags])
 
@@ -211,14 +211,14 @@ class Virtual_Manager(cmd.Cmd):
             return
 
         for node in query:
-            print(f"id: {node.id}")
-            print(f"title: {node.title}")
-            print(f"category: {node.category}")
-            print(f"status: {node.status}")
-            print(f"priority group: {node.priority_group}")
-            print(f"created at: {node.created_at}")
-            print(f"last Updated: {node.last_updated}")
-            print(f"content: {node.content}")
+            print(f'id: {node.id}')
+            print(f'title: {node.title}')
+            print(f'category: {node.category}')
+            print(f'status: {node.status}')
+            print(f'priority group: {node.priority_group}')
+            print(f'created at: {node.created_at}')
+            print(f'last Updated: {node.last_updated}')
+            print(f'content: {node.content}')
 
             print('tags: ', [tag.tag for tag in node.tags])
 
@@ -263,17 +263,18 @@ class Virtual_Manager(cmd.Cmd):
         print('success')
 
     def do_search(self, arg):
-        """format: search [[key, value], [key, value], ...]
+        '''format: search [[key, value], [key, value], ...]
         options: id, title, category, status
-        example: search tag research category task"""
+        example: search tag research category task'''
         
         if not db_existence():
             return
 
         args = shlex.split(arg)
         if len(args) % 2 != 0:
-            print("invalid format. format: search [[key, value], [key, value], ...]" \
-            "example: search tag research category task")
+            print('''invalid format. format: search [[key, value], [key, value], ...]
+            example: search tag research category task
+            you can only search one tag at a time''')
             return
 
         filters = {}
@@ -281,80 +282,72 @@ class Virtual_Manager(cmd.Cmd):
             key = args[i].lower()
             value = args[i+1]
             filters[key] = value
+        
+        conditions = True  # start with a neutral condition (like WHERE 1=1)
 
-        query = "SELECT * FROM nodes WHERE 1=1"
-        params = []
+        if 'id' in filters:
+            conditions &= (Nodes.id == int(filters['id']))
 
-        if "id" in filters:
-            query += " AND id = ?"
-            params.append(filters["id"])
+        if 'category' in filters:
+            conditions &= (Nodes.category == filters['category'])
 
-        if "title" in filters:
-            query += " AND title LIKE ?"
-            params.append(f"%{filters['title']}%")
+        if 'status' in filters:
+            conditions &= (Nodes.status == filters['status'])
 
-        if "tags" in filters:
-            query += " AND json_extract(tags, '$') LIKE ?"
-            params.append(f"%{filters['tags']}%")
+        if 'title' in filters:
+            conditions &= (Nodes.title.contains(filters['title']))
 
-        if "category" in filters:
-            query += " AND category = ?"
-            params.append(filters["category"])
+        # Special case: join with tags
+        query = Nodes.select().join(NodeTags, on=(Nodes.id == NodeTags.node_id), join_type=JOIN.LEFT_OUTER)
 
-        if "status" in filters:
-            query += " AND status = ?"
-            params.append(filters["status"])
+        if 'tag' in filters:
+            conditions &= (NodeTags.tag.contains(filters['tag']))
 
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(query, params)
-        results = c.fetchall()
-        conn.close()
+        query = query.where(conditions).distinct()
 
-        if not results:
-            print("no nodes found.")
+
+        if not query:
+            print('no nodes found.')
             return
 
-        for row in results:
+        for node in query:
             output = ''
-            output += f"{row[0]}-{row[2]}: {row[1]}  "
-            if "status" in filters:
-                output +=  f"status: {row[4]}, "
-            if "tags" in filters:
-                tags = json.loads(row[5]) if row[5] else []
-                output += f"tags: {tags}, "
+            output += f'{node.id}-{node.category}: {node.title}  '
+            if 'status' in filters:
+                output +=  f'status: {node.status}, '
+            if 'tag' in filters:
+                output += f'tags: {[tag.tag for tag in node.tags]}, '
             print(output)
 
     def do_delete(self, arg):
-        '''deletes a node by id.
-        format: delete <id>'''
+        '''deletes a node by id. 
+        format: delete <id> <hard>
+        example: delete 4245 hard (does hard delete)
+        example delete 67943 (does soft delete)'''
         
         if not db_existence():
             return
         
         try:
             id = int(shlex.split(arg)[0])
-        except:
-            print('invalid format, format: delete <id>') 
+            hard = shlex.split(arg)[1] == 'hard'
+        except Exception as e:
+            print('invalid format, format: delete <id> <hard>', e)
             return
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        print('deleting node:')
-        self.do_inspect(self, str(id))
-        node = c.execute('''SELECT id FROM nodes WHERE id = ?''', (id,)).fetchone()
-        if not node:
-            print('node does not exist')
-            return
-        c.execute('''DELETE FROM nodes WHERE id = ?''', (id,))
-        conn.commit()
-        conn.close()
-        print('success')
+        
+        if hard:
+            count = Nodes.delete().where(Nodes.id == id).execute()
+        else:
+            count = Nodes.update({Nodes.status: 'deleted'}).where(Nodes.id == id).execute() #simply marks it as such
+
+        if not count:
+            print('no nodes found')
 
     def do_edit(self, arg):
-        """format: edit <id> [[key, new value], [key, new value], ...]
+        '''format: edit <id> [[key, new value], [key, new value], ...]
         options: title, parent, status, content
-        example: edit 3902 status deprecated title \"new title\"
-        please use quotes for new values with spaces"""
+        example: edit 3902 status deprecated title \'new title\'
+        please use quotes for new values with spaces'''
         
         if not db_existence():
             return
@@ -362,52 +355,25 @@ class Virtual_Manager(cmd.Cmd):
         args = shlex.split(arg)
         try:
             id = int(args[0])
-            args = args[1:]
-            if len(args) % 2 != 0:
+            updates = args[1:]
+            if len(updates) % 2 != 0 or len(updates) == 0:
                 raise Exception
-        except:
-            print("invalid format. format: edit <id> [[key, new value], [key, new value], ...]\n" \
-            "example: edit 3902 status deprecated title Y")
-            return
-        
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        node = c.execute('''SELECT id FROM nodes WHERE id = ?''', (id,)).fetchone()
-        if not node:
-            print('node does not exist')
+        except Exception as e:
+            print('invalid format. format: edit <id> [[key, new value], [key, new value], ...]\n' \
+            'example: edit 3902 status deprecated title Y\n', e)
             return
 
-        filters = {}
-        for i in range(0, len(args), 2):
+        updates_dict = {}
+
+        for i in range(0, len(updates), 2):
             key = args[i].lower()
             value = args[i+1]
-            filters[key] = value
+            updates_dict[key] = value
 
-        params = []
-        updates = ''
-        if "title" in filters:
-            updates += "title = ?, "
-            params.append(filters["title"])
 
-        if "parent" in filters:
-            updates += "parent_id = ?, "
-            params.append(filters["parent"])
-
-        if "status" in filters:
-            updates += "status = ?, "
-            params.append(filters["status"])
-
-        if "content" in filters:
-            updates += "content = ?, "
-            params.append(filters["content"])
-        
-        params.append(id)
-        query = f"UPDATE nodes SET {updates[:-2]} WHERE id = ?"
         
         try:
-            c.execute(query, params)
-            conn.commit()
-            conn.close()
+            Nodes.update(updates).where(Nodes.id == id)
         except Exception as e:
             print('error: ', e)
         print('success')
@@ -531,7 +497,7 @@ class Virtual_Manager(cmd.Cmd):
         conn.close()
         print('success')
 
-            
+
 
 
 
@@ -539,7 +505,7 @@ class Virtual_Manager(cmd.Cmd):
 def db_existence():
     if 'nodes' in db.get_tables() and 'nodetags' in db.get_tables():
         return True
-    print("database not found.")
+    print('database not found.')
     return False
 
 
@@ -597,7 +563,7 @@ def show_tree(root_id):
                 
                 closed_effect = ''
                 if priority_group[child][5] in ['closed', 'deprecated']:
-                    closed_effect = "\033[90m" #makes it gray
+                    closed_effect = '\033[90m' #makes it gray
                 colour += closed_effect
                 print(preceeding_string + connector + f'{closed_effect}{priority_group[child][0]}-{colour}{priority_group[child][2]}{WHITE}{closed_effect}: {priority_group[child][1]}{RESET}')
 
@@ -649,10 +615,10 @@ def get_attribute(attr_name, optional=False, valid_attrs=[], multiple=False):
 
 
 def sanitize_name(title, id, status):
-    title = title.lower().replace(" ", "_")
-    name = f"{title}_{id}"
-    if status.lower() != "open":
-        name = f"CLOSED_{name}"
+    title = title.lower().replace(' ', '_')
+    name = f'{title}_{id}'
+    if status.lower() != 'open':
+        name = f'CLOSED_{name}'
     return name
 
 
