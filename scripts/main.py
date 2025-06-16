@@ -47,8 +47,8 @@ class Nodes(BaseModel):
     parent = ForeignKeyField('self', backref='children', null=True, on_delete='SET NULL')
     status = TextField(null=True, default='open')
     priority_group = IntegerField(default=0)
-    created_at = DateTimeField(default = datetime.datetime.now)
-    last_updated = DateTimeField(default = datetime.datetime.now)
+    created_at = DateTimeField(default = datetime.datetime.now().isoformat)
+    last_updated = DateTimeField(default = datetime.datetime.now().isoformat)
     content = TextField(null=True)
 
 
@@ -119,7 +119,7 @@ class Virtual_Manager(cmd.Cmd):
 
                 for tag in get_attribute('tags', optional=True, multiple=True):
                     NodeTags.create(node=n, tag=tag)
-                    print(tag)
+                    print('tag: ', tag)
 
             case 'recurring' | 'todo' | 'folder' | 'manual':
                 n = Nodes.create(
@@ -138,7 +138,7 @@ class Virtual_Manager(cmd.Cmd):
 
                 for tag in get_attribute('tags', optional=True, multiple=True):
                     NodeTags.create(node=n, tag=tag)
-                    print(tag)
+                    print('tag: ', tag)
                 
             case 'note':
                 n = Nodes.create(
@@ -153,7 +153,7 @@ class Virtual_Manager(cmd.Cmd):
 
         for k, v in model_to_dict(n).items():
             if k == 'parent':
-                print(f'{k}: {v['id']}')
+                print(f'{k}: {v and v['id']}') #handle parent == None case
             else:
                 print(f'{k}: {v}')
 
@@ -373,7 +373,7 @@ class Virtual_Manager(cmd.Cmd):
 
         
         try:
-            Nodes.update(updates).where(Nodes.id == id)
+            Nodes.update(updates_dict).where(Nodes.id == id)
         except Exception as e:
             print('error: ', e)
         print('success')
@@ -394,12 +394,13 @@ class Virtual_Manager(cmd.Cmd):
 
         if not db_existence():
             return
+        
+        nodes_with_tags = prefetch(Nodes.select(), NodeTags.select())
 
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('SELECT * FROM nodes')
-        nodes = c.fetchall()
-        conn.close()
+        nodes = []
+        for node in nodes_with_tags:
+            tag_list = [tag.tag for tag in node.tags]
+            nodes.append(list(node.__data__.values()) + [tag_list,])
 
         parent_to_child = {}
         for node in nodes:
@@ -416,7 +417,7 @@ class Virtual_Manager(cmd.Cmd):
                 title = child[1]
                 category = child[2]
 
-                keys = ['id', 'title', 'category', 'parent_id', 'status', 'tags', 'priority_group', 'content', 'created_at', 'last_updated']
+                keys = ['id', 'title', 'category', 'parent_id', 'status', 'priority_group', 'created_at', 'last_updated', 'content', 'tags']
                 node_dict = dict(zip(keys, child))
                 content = node_dict.pop('content') or ''  # content will be separate and at the end
                 output = '--vmgr\n' + json.dumps(node_dict, indent=2) + '\n\n' + content
@@ -425,8 +426,7 @@ class Virtual_Manager(cmd.Cmd):
                 new_path = os.path.join(cur_path, name) #either folder or file
 
                 if category in ['task', 'note']: #doesnt make new folder
-                    new_path += '.md'
-                    with open(new_path, 'w') as f:
+                    with open(new_path + '.md', 'w') as f:
                         f.write(output)
                     helper(cur_path, id)
                 
@@ -438,8 +438,11 @@ class Virtual_Manager(cmd.Cmd):
                     helper(new_path, id)
 
         os.makedirs(MIRROR, exist_ok=True)
-        helper(MIRROR, None)
-        print('success')
+        try:
+            helper(MIRROR, None)
+            print('success')
+        except Exception as e:
+            print('failed', e)
 
     def do_pull(self, arg):
         '''if there are md files in mirror, they will be used to edit existing nodes based on id.
@@ -448,20 +451,11 @@ class Virtual_Manager(cmd.Cmd):
 
         if not db_existence():
             return
-
-        keys = ['title', 'category', 'parent_id', 'status', 'tags', 'priority_group', 'content', 'created_at', 'last_updated', 'id']
-
-        id = None
-        if arg:
-            try:
-                id = int(arg)
-            except Exception as e:
-                print('invalid format. agument must be a number', e)
         
         def extract_md(path):
             with open(path, 'r') as f:
                 text = f.read()
-                if text[:7] == '--vmgr\n':
+                if text[:7] != '--vmgr\n':
                     return None
                 metadata, content = text[7:].split('\n\n', 1)
             node_dict = json.loads(metadata)
@@ -470,31 +464,39 @@ class Virtual_Manager(cmd.Cmd):
 
         #getting paths to all .md files
         md_paths = []
+        os.makedirs(MIRROR, exist_ok=True)
         for path, dirs, files in os.walk(MIRROR):
             for file in files:
                 if file[-3:] == '.md':
                     md_paths.append(os.path.join(path, file))
-        
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
 
         for path in md_paths:
             try:
                 node_dict = extract_md(path)
                 if not node_dict:
                     continue
+                
+                Nodes.update(
+                title=node_dict['title'],
+                category=node_dict['category'],
+                parent_id=node_dict['parent_id'],
+                status=node_dict['status'],
+                priority_group=node_dict['priority_group'],
+                content=node_dict['content'],
+                created_at=node_dict['created_at'],
+                last_updated=node_dict['last_updated']
+                ).where(Nodes.id == node_dict['id']).execute()
 
-                node_list = [node_dict[i] for i in keys]
+                NodeTags.delete().where(NodeTags.node_id == node_dict['id']).execute()
 
-                c.execute('''UPDATE nodes
-                    SET title=?, category=?, parent_id=?, status=?, tags=?, priority_group=?, content=?, created_at=?, last_updated=?
-                    WHERE id=?''', node_list)
+                new_tags = node_dict.get('tags', [])
+                NodeTags.insert_many([{'node_id': node_dict['id'], 'tag': tag} for tag in new_tags]).execute()
+
                 
             except Exception as e:
                 print(f'file at {path} could not be used to update database', e)
                 print('please check if the JSON formatting is correct and that there are two newline characters after the JSON')
-        conn.commit()
-        conn.close()
+
         print('success')
 
 
