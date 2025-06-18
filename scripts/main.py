@@ -373,8 +373,6 @@ class Virtual_Manager(cmd.Cmd):
             value = updates[i+1]
             updates_dict[key] = value
 
-        print(updates_dict)
-
         try:
             Nodes.update(updates_dict).where(Nodes.id == id).execute()
         except Exception as e:
@@ -502,8 +500,18 @@ class Virtual_Manager(cmd.Cmd):
 
         print('success')
 
-
-
+    def do_newtag(self, arg):
+        '''adds tags to a node.
+        format: newtag <id> wip \"long term\"'''
+        if not db_existence():
+            return
+        
+        id, *args = shlex.split(arg)
+        
+        if NodeTags.insert_many([{'node': int(id), 'tag': tag} for tag in args]).execute():
+            print('success')
+        else:
+            print('Node not found')
 
 
 
