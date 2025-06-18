@@ -502,7 +502,8 @@ class Virtual_Manager(cmd.Cmd):
 
     def do_newtag(self, arg):
         '''adds tags to a node.
-        format: newtag <id> wip \"long term\"'''
+        format: newtag <id> tag1 \"tag two\"'''
+
         if not db_existence():
             return
         
@@ -513,7 +514,19 @@ class Virtual_Manager(cmd.Cmd):
         else:
             print('Node not found')
 
+    def do_deltag(self, arg):
+        '''removes tags from a node.
+        format: deltag <id> tag1 \"tag two\"'''
 
+        if not db_existence():
+            return
+        
+        id, *args = shlex.split(arg)
+        
+        if NodeTags.delete().where((NodeTags.node == int(id)) & NodeTags.tag.in_(args)).execute():
+            print('success')
+        else:
+            print('Node not found')
 
 def db_existence():
     if 'nodes' in db.get_tables() and 'nodetags' in db.get_tables():
