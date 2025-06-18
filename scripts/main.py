@@ -342,6 +342,8 @@ class Virtual_Manager(cmd.Cmd):
 
         if not count:
             print('no nodes found')
+        else:
+            print('success')
 
     def do_edit(self, arg):
         '''format: edit <id> [[key, new value], [key, new value], ...]
@@ -353,6 +355,7 @@ class Virtual_Manager(cmd.Cmd):
             return
 
         args = shlex.split(arg)
+
         try:
             id = int(args[0])
             updates = args[1:]
@@ -366,14 +369,14 @@ class Virtual_Manager(cmd.Cmd):
         updates_dict = {}
 
         for i in range(0, len(updates), 2):
-            key = args[i].lower()
-            value = args[i+1]
+            key = updates[i].lower()
+            value = updates[i+1]
             updates_dict[key] = value
 
+        print(updates_dict)
 
-        
         try:
-            Nodes.update(updates_dict).where(Nodes.id == id)
+            Nodes.update(updates_dict).where(Nodes.id == id).execute()
         except Exception as e:
             print('error: ', e)
         print('success')
