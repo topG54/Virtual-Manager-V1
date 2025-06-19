@@ -16,6 +16,7 @@ MAGENTA = '\033[0;35m'
 CYAN    = '\033[0;36m'
 PINK    = '\033[0;201m'
 WHITE   = '\033[0;37m'
+GREY    = '\033[38;2;100;100;100m'
 RESET   = '\033[0m'
 
 RESET_TEXT_COLOUR = '\033[39m'
@@ -591,7 +592,7 @@ def show_tree(root_id):
                 if priority_group[child][5] in ['closed', 'deprecated']:
                     closed_effect = '\033[90m' #makes it gray
                 colour += closed_effect
-                print(preceeding_string + connector + f'{closed_effect}{priority_group[child][0]}-{colour}{priority_group[child][2]}{WHITE}{closed_effect}: {priority_group[child][1]}{RESET}')
+                print(preceeding_string + GREY + connector + RESET + f'{closed_effect}{priority_group[child][0]}-{colour}{priority_group[child][2]}{WHITE}{closed_effect}: {priority_group[child][1]}{RESET}')
 
                 if closed_effect: #dont print children of closed
                     return
@@ -599,7 +600,7 @@ def show_tree(root_id):
                 if child == len(priority_group) - 1: # secondary nodes after last element have no added '│'
                     print_tree_helper(priority_group[child][0], preceeding_string + '    ')
                 else:
-                    print_tree_helper(priority_group[child][0], preceeding_string + '    │')
+                    print_tree_helper(priority_group[child][0], preceeding_string + GREY + '    │' + RESET)
         
     
     print_tree_helper(root_id)

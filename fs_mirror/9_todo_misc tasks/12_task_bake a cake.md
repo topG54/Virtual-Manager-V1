@@ -11,3 +11,29 @@
   "tags": []
 }
 
+
+# Hello, this is a test for markdown
+---
+wow, this look quite nice.
+heres a link : [[10_task_eat food.md]]
+
+---
+
+wooow
+
++ 1
++ 2
++ 3
+
+- [x] gfgr
+- [x] rege
+- [x] ege
+- [ ] eee
+- [ ] eee
+- [x] w
+  
+
+
+
+
+
